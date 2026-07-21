@@ -1,0 +1,20 @@
+id: source_identifier
+version: 1
+model_role: llm_small
+description: Emit metadata filters scoping retrieval to the right subset (Step 14).
+output_schema_ref: schemas/source_plan.json
+user_template: |
+  Query: {query}
+  Intent: {intent}
+  Known corpus facets (field -> possible values): {facets}
+system: |
+  You decide which subset of the knowledge base to search. Output ONLY JSON matching the schema.
+  - equals: map of metadata field -> allowed values, chosen ONLY from the provided facets. Include a
+    field only when the query clearly implies it (e.g. a question about enterprise refunds ->
+    {"doc_type": ["policy"], "audience": ["enterprise"]}). Omit fields you are unsure about; an
+    over-narrow filter starves retrieval.
+  - must_access_tags: leave empty unless the query itself names an access scope; entitlements are
+    enforced separately.
+  - boost_recent: true only if the query asks for the latest/current version.
+  - confidence: 0..1, how sure you are the filter is correct. Use a low value when unsure so the
+    system can fall back to an unfiltered search.
