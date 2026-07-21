@@ -51,16 +51,19 @@ def _enrichment_for(messages) -> str:
 def sample_index():
     import ragnarok.cache as cache_mod
     from ragnarok.optimization.semantic_cache import reset_semantic_cache
+    from ragnarok.stores.factory import get_graph_store, reset_stores
 
     cache_mod.get_cache.cache_clear()
     get_embedding_client.cache_clear()
     reset_semantic_cache()
+    reset_stores()  # fresh singleton graph store per test
     reset_clients()
     set_role_client("llm_large", FakeLLM(handler=lambda m, s: _enrichment_for(m)))
 
     store = InMemoryVectorStore()
     features = InMemoryFeatureStore()
-    pipe = build_pipeline(registry=InMemoryRegistry(), store=store, feature_store=features)
+    graph = get_graph_store()  # populated during ingest (Step 34)
+    pipe = build_pipeline(registry=InMemoryRegistry(), store=store, feature_store=features, graph=graph)
     summary = pipe.run([SAMPLE])
     assert summary.processed >= 2
 
@@ -70,3 +73,4 @@ def sample_index():
     cache_mod.get_cache.cache_clear()
     get_embedding_client.cache_clear()
     reset_semantic_cache()
+    reset_stores()

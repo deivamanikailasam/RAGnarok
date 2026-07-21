@@ -35,6 +35,14 @@ def get_feature_store() -> FeatureStore:
     return InMemoryFeatureStore()
 
 
+@lru_cache
+def get_graph_store():  # -> KnowledgeGraph (Step 34)
+    from ragnarok.stores.graph import KnowledgeGraph
+
+    return KnowledgeGraph()
+
+
 def reset_stores() -> None:
     get_vector_store.cache_clear()
     get_feature_store.cache_clear()
+    get_graph_store.cache_clear()
