@@ -1,0 +1,22 @@
+# secrets & local config
+.env
+.env.*
+config/settings.yaml
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# data & volumes
+qdrant_data/
+pg_data/
+redis_data/
+grafana_data/
+datasets/raw/
+*.log

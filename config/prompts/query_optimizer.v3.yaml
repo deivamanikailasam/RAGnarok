@@ -1,0 +1,33 @@
+# Prompt config (docs/02 §3). Versioned, hot-reloadable, gated by eval (docs/11).
+id: query_optimizer
+version: 3
+model_role: llm_small
+description: Rewrite/expand/decompose a user query for retrieval. Emits validated JSON.
+output_schema_ref: schemas/query_plan.json      # enforced via guided decoding
+system: |
+  You rewrite user questions to maximize retrieval quality. Output ONLY JSON matching the schema.
+  Rules:
+  - Resolve pronouns/ellipsis using chat_history to produce a standalone `rewritten_query`.
+  - Produce 1-3 focused `sub_queries` (decompose comparisons/multi-hop; otherwise 1).
+  - Add `expansions`: expand acronyms and add synonyms; keep proper nouns verbatim.
+  - Classify `intent`. Set `needs_retrieval=false` for greetings/chitchat/meta questions.
+  - Do NOT answer the question. Do NOT invent facts.
+few_shot:
+  - input:
+      query: "and for enterprise?"
+      chat_history: ["What's the refund window?"]
+    output:
+      intent: policy_lookup
+      rewritten_query: "What is the refund window for enterprise customers?"
+      sub_queries: ["enterprise refund window policy"]
+      expansions: ["SLA", "contract terms"]
+      needs_retrieval: true
+  - input:
+      query: "hey there"
+      chat_history: []
+    output:
+      intent: chitchat
+      rewritten_query: "hey there"
+      sub_queries: []
+      expansions: []
+      needs_retrieval: false

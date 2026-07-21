@@ -1,0 +1,87 @@
+# RAGnarok configuration — copy to config/settings.yaml and edit.
+# Every value is env-interpolated (${VAR}) and validated at startup (see docs/02).
+env: local
+
+models:
+  # generation + ingestion enrichment (docs/03, docs/08)
+  llm_large:
+    base_url: ${LLM_LARGE_BASE_URL}       # local: Ollama/vLLM. hosted: https://api.openai.com/v1
+    model: qwen2.5:32b-instruct
+    api_key: ${OPENAI_API_KEY}            # blank/"sk-local" for local servers
+    temperature: 0.2
+    max_tokens: 1024
+    timeout_s: 120
+  # query optimize, source id, post-process, judges (docs/06, docs/08, docs/11)
+  llm_small:
+    base_url: ${LLM_SMALL_BASE_URL}
+    model: qwen2.5:7b-instruct
+    temperature: 0.0                      # deterministic, cacheable schema-bound tasks
+    max_tokens: 512
+    timeout_s: 30
+  embedding:                              # docs/04, docs/07
+    base_url: ${EMBEDDING_BASE_URL}
+    model: bge-m3
+    dim: 1024
+  reranker:                               # docs/07
+    url: ${RERANKER_URL}
+    model: bge-reranker-v2-m3
+
+retrieval:                                # docs/07
+  top_k_dense: 40
+  top_k_sparse: 40
+  fusion: rrf
+  rrf_k: 60
+  rerank_top_n: 8
+  min_rerank_score: 0.15
+  filter_fallback_min_candidates: 5       # docs/06 safety valve
+
+generation:                               # docs/08
+  max_context_chunks: 8
+  context_budget_tokens: 3500
+  cite_sources: true
+  self_correction_max_retries: 1
+
+chunking:                                 # docs/04
+  target_tokens: 384
+  overlap: 0.15
+
+guardrails:                               # docs/09
+  input:
+    pii: block                            # block | redact | off
+    injection: sanitize
+    max_query_tokens: 512
+    rate_limit_per_min: 30
+  output:
+    grounding_min: 0.6
+    pii: redact
+    toxicity: block
+
+stores:                                   # docs/05
+  qdrant_url: ${QDRANT_URL}
+  collection_alias: chunks
+  vector_quantization: int8
+  database_url: ${DATABASE_URL}
+  redis_url: ${REDIS_URL}
+
+eval:                                     # docs/11
+  golden_suite: datasets/golden/v1
+  gate_thresholds:
+    faithfulness: 0.85
+    answer_relevancy: 0.80
+    context_recall: 0.75
+  judge_role: llm_small                   # use a stronger/hosted model offline if policy allows
+
+observability:                            # docs/12
+  langfuse:
+    host: ${LANGFUSE_HOST}
+    public_key: ${LANGFUSE_PUBLIC_KEY}
+    secret_key: ${LANGFUSE_SECRET_KEY}
+    sample_rate: 1.0                      # prod: ~0.1–0.2 + 100% on error
+
+serving:                                  # docs/10
+  stream: true
+  slack_socket_mode: true
+
+caching:                                  # docs/14
+  response_ttl_s: 3600
+  rewrite_ttl_s: 3600
