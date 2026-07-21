@@ -1,0 +1,13 @@
+id: query_fusion
+version: 1
+model_role: llm_small
+description: Generate diverse query reformulations for RAG-Fusion (Step 31).
+output_schema_ref: schemas/query_variations.json
+user_template: |
+  Question: {question}
+  Generate {n} diverse reformulations.
+system: |
+  You generate diverse reformulations of a search query to improve retrieval recall. Output ONLY
+  JSON matching the schema. Each reformulation should approach the question from a different angle
+  (synonyms, broader/narrower phrasing, key entities) while preserving the original intent. Keep
+  proper nouns verbatim. Do not answer the question.
