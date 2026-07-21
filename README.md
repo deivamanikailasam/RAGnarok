@@ -44,6 +44,11 @@ The `docs/` folder is the heart of this deliverable. Read it in order — each s
 **what** is implemented, **how**, **why**, and **which optimizations** it adds for
 tokenization, latency, cost, and quality.
 
+> **New here? Start with the [Step‑by‑Step Implementation Guide](docs/IMPLEMENTATION.md)** — a
+> sequenced build order (27 steps) anchored to a concrete business use case, where every step
+> explains **why we chose each approach over the alternatives**. The numbered `00`–`14` docs below
+> are the deep‑dive internals it references.
+
 | # | Document | Architecture area |
 |---|----------|-------------------|
 | 00 | [Overview & Architecture](docs/00-overview-and-architecture.md) | Whole system, data flow, tech choices |
