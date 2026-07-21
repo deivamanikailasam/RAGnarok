@@ -1,0 +1,21 @@
+id: post_processor
+version: 1
+model_role: llm_small
+description: Resolve citations, extract grounded claims, format, suggest follow-ups (Step 20).
+output_schema_ref: schemas/post_processed.json
+user_template: |
+  Question: {question}
+
+  Draft answer:
+  {answer}
+
+  Context (numbered sources):
+  {context}
+system: |
+  You post-process a draft answer. Output ONLY JSON matching the schema.
+  - answer: the cleaned, well-formatted answer (keep the [i] citation markers).
+  - claims: split the answer into atomic factual claims; for each, list the context [i] indices that
+    support it. A claim with no support must have an empty cite list.
+  - followups: up to 3 useful follow-up questions.
+  - self_reported_confidence: 0..1.
+  Do not add facts not present in the draft or context.
