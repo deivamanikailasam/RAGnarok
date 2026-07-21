@@ -1,0 +1,12 @@
+id: raptor_summary
+version: 1
+model_role: llm_large
+description: Summarize a cluster of related chunks into a higher-level RAPTOR node (Step 37).
+user_template: |
+  Summarize the following related passages into a concise, self-contained summary that preserves
+  the key facts, entities, and numbers. This summary will be retrieved on its own.
+
+  {passages}
+system: |
+  You write dense, factual summaries for a retrieval index. Preserve specific facts, names, and
+  numbers. Do not add information not present. Output only the summary.

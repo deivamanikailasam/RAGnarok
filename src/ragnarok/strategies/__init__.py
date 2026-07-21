@@ -35,6 +35,7 @@ from ragnarok.strategies import hybrid_graph as _hybrid_graph  # noqa: E402,F401
 from ragnarok.strategies import hyde as _hyde  # noqa: E402,F401
 from ragnarok.strategies import multimodal as _multimodal  # noqa: E402,F401
 from ragnarok.strategies import naive as _naive  # noqa: E402,F401
+from ragnarok.strategies import raptor as _raptor  # noqa: E402,F401
 from ragnarok.strategies import self_rag as _self_rag  # noqa: E402,F401
 
 __all__ = ["RagStrategy", "StrategyContext", "StrategyResult", "get_strategy", "available", "register"]
