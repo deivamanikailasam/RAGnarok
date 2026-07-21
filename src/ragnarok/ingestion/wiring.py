@@ -10,19 +10,22 @@ from ragnarok.ingestion.enrich import enrich_sync
 from ragnarok.ingestion.indexing import make_index_fn
 from ragnarok.ingestion.pipeline import IngestionPipeline
 from ragnarok.ingestion.registry import Registry, SqliteRegistry
-from ragnarok.stores.factory import get_vector_store
+from ragnarok.stores.factory import get_feature_store, get_vector_store
+from ragnarok.stores.features import FeatureStore
 from ragnarok.stores.vector import VectorStore
 
 
 def build_pipeline(
     registry: Registry | None = None,
     store: VectorStore | None = None,
+    feature_store: FeatureStore | None = None,
     collection: str = "chunks",
 ) -> IngestionPipeline:
     registry = registry or SqliteRegistry()
     store = store or get_vector_store()
+    feature_store = feature_store or get_feature_store()
     return IngestionPipeline(
         registry=registry,
         enrich_fn=enrich_sync,  # Step 6
-        index_fn=make_index_fn(store, collection),  # Steps 8-10
+        index_fn=make_index_fn(store, collection, feature_store),  # Steps 8-11
     )
