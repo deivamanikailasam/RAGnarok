@@ -85,3 +85,19 @@ serving:                                  # docs/10
 caching:                                  # docs/14
   response_ttl_s: 3600
   rewrite_ttl_s: 3600
+
+optimization:                             # Step 28 — runtime cost/latency/token management
+  adaptive_routing: true                  # simple, confident queries -> small generation model
+  semantic_cache: true                    # serve paraphrased repeats via embedding similarity
+  semantic_cache_threshold: 0.90          # cosine >= this counts as a hit (same entitlements only)
+  semantic_cache_max_entries: 2000
+  simple_intents: [factoid, policy_lookup, faq]
+  simple_generation_role: llm_small
+  complex_generation_role: llm_large
+  simple_rerank_top_n: 4                   # fewer chunks -> fewer input tokens on simple queries
+  complex_rerank_top_n: 8
+  simple_context_tokens: 1500
+  complex_context_tokens: 3500
+  simple_max_output_tokens: 512
+  complex_max_output_tokens: 1024
+  max_cost_per_query_usd: 0.0              # > 0 forces the cheap path when a query would exceed it

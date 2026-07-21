@@ -7,6 +7,32 @@ and the rough magnitude of the win. Use this as the tuning checklist.
 The meta‑principle: **measure first ([docs/12](12-observability-and-monitoring.md)), then pull the biggest lever.** In RAG, the biggest
 levers are almost always (1) how many tokens the *large* model reads, and (2) retrieval precision.
 
+> **The adaptive layer (Step 28) sits on top of everything below.** The tables in this document are
+> the *toolbox* of individual optimizations; Step 28 is the *decision layer* that, per request,
+> chooses how much of that toolbox to spend — which model generates, how big the context budget is,
+> and whether a semantic cache hit lets us skip the request entirely. See
+> [§0 — The adaptive runtime layer](#0-the-adaptive-runtime-layer-step-28).
+
+---
+
+## 0. The adaptive runtime layer (Step 28)
+
+Cost/latency/token use are **actively managed per query**, not just incidentally reduced. Three
+mechanisms, all deterministic (no extra LLM call) and all gated by eval:
+
+| Mechanism | What it does | Lever |
+|---|---|---|
+| **Adaptive model routing** | Route simple + confident queries (intent ∈ {factoid, policy_lookup, faq}, single‑hop, high top‑rerank score) to the **small** generation model; complex/low‑confidence to the **large** model. | **cost + latency** — the large model is reserved for the ~20–30% of queries that need it |
+| **Dynamic per‑query budgets** | `rerank_top_n`, `context_budget_tokens`, `max_output_tokens` scale with the tier (simple: 4 chunks / ~1.5k in / ≤512 out; complex: 8 / ~3.5k / ≤1024). | **tokens + latency** — caps input *and* output tokens on the simple majority |
+| **Semantic response cache** | Serve a stored answer when the query **embedding** is cosine‑similar to a prior one **and entitlements match** — catches paraphrases the exact cache misses. | **cost + latency** — a hit skips retrieval *and* generation entirely |
+
+**Why deterministic routing (not an LLM router):** a router LLM would add latency and cost to *every*
+query — self‑defeating. Intent (from Step 6/14) and retrieval confidence (Step 17) are already
+computed, so routing is effectively free. **Safety:** low retrieval confidence escalates to the large
+model, and the grounding gate ([docs/08](08-answer-generation-and-postprocessing.md)) still guards correctness at every tier; the semantic cache is
+**entitlement‑scoped** so it never crosses tiers/tenants. Config: `optimization.*` in `settings.yaml`;
+`max_cost_per_query_usd` forces the cheap path when a query would exceed a ceiling.
+
 ---
 
 ## 1. Tokenization optimizations
@@ -20,6 +46,7 @@ levers are almost always (1) how many tokens the *large* model reads, and (2) re
 | **Small‑LLM post‑processing** | [docs/08](08-answer-generation-and-postprocessing.md) | citations/format/claims at ~1/10th large‑model token cost |
 | **Table markdown only when a table chunk is used** | [docs/04](04-chunking-and-embedding.md),[docs/08](08-answer-generation-and-postprocessing.md) | no verbose tables in context unless relevant |
 | **`min_rerank_score` floor** | [docs/07](07-hybrid-retrieval.md) | drops weak chunks → smaller context, less dilution |
+| **Dynamic per‑query token budget** | [Step 28](IMPLEMENTATION.md) | simple queries pack ~1.5k in / ≤512 out vs 3.5k / ≤1024 — caps input *and* output tokens on the majority |
 
 **Rule:** the large model's *input* tokens are the #1 cost driver. Precision retrieval + tight
 context beats any decoding trick.
@@ -39,6 +66,8 @@ context beats any decoding trick.
 | **`needs_retrieval` gate** | [docs/06](06-query-preprocessing.md) | chitchat skips the whole pipeline |
 | **Cheapest‑guard‑first** | [docs/09](09-guardrails-and-safety.md) | guardrails add ms, not a fixed LLM tax |
 | **Adaptive top‑k by intent** | [docs/07](07-hybrid-retrieval.md) | simple queries do less work |
+| **Adaptive model routing (small vs large)** | [Step 28](IMPLEMENTATION.md) | simple queries generate on the faster small model |
+| **Semantic response cache** | [Step 28](IMPLEMENTATION.md) | a paraphrase hit skips retrieval *and* generation entirely |
 | **Everything expensive offline** | [docs/03](03-document-ingestion-and-enrichment.md),[docs/04](04-chunking-and-embedding.md) | enrichment/embedding never on the query path |
 
 **Latency budget target (local, warm):** TTFT < 1 s, full answer < 8 s ([docs/00](00-overview-and-architecture.md) trace).
@@ -56,6 +85,9 @@ context beats any decoding trick.
 | **Near‑dup dedup** | [docs/03](03-document-ingestion-and-enrichment.md) | smaller index, less embed + retrieval waste |
 | **Local‑first, hosted only for burst/quality** | [docs/02](02-configuration-and-model-providers.md),[docs/13](13-deployment-scaling-operations.md) | marginal query cost ≈ GPU‑seconds |
 | **Abstain on low grounding** | [docs/08](08-answer-generation-and-postprocessing.md) | avoids the costliest failure: a confident wrong answer |
+| **Adaptive routing → small model on the simple majority** | [Step 28](IMPLEMENTATION.md) | the large model is reserved for the ~20–30% of queries that need it |
+| **Semantic + exact response cache** | [Step 28](IMPLEMENTATION.md),[docs/08](08-answer-generation-and-postprocessing.md) | repeats & paraphrases served at zero LLM cost |
+| **`max_cost_per_query_usd` ceiling** | [Step 28](IMPLEMENTATION.md) | forces the cheap path when a query would blow the per‑query budget |
 | **Cost/query dashboards + budget alerts** | [docs/12](12-observability-and-monitoring.md) | catch regressions before the bill does |
 
 ---
@@ -78,7 +110,8 @@ Every layer is version‑namespaced so a model/prompt/index change invalidates c
 cache hit is worse than a miss.
 
 ```
-Response cache        key = ans:{index_ver}:{norm_query_hash}      → skip entire pipeline
+Response cache        key = ans:{index_ver}:{norm_query_hash}      → skip entire pipeline (exact)
+Semantic resp. cache  key ≈ cosine(query_embedding) within scope   → skip entire pipeline (paraphrase)  [Step 28]
 Retrieval cache       key = ret:{index_ver}:{query+filter_hash}    → skip search+rerank
 Query-rewrite cache   key = qopt:{prompt_ver}:{query+history_hash} → skip optimizer LLM
 Embedding cache       key = emb:{model_ver}:{text_hash}            → skip embedding (ingest+query)
@@ -86,8 +119,12 @@ Enrichment cache      key = enr:{enrich_ver}:{block_hash}          → skip larg
 Prompt-prefix KV      (in model server)                            → cheaper/faster decode
 ```
 
-**Normalization** (lowercasing, whitespace, semantic‑equivalent rewrite) widens response/rewrite
-cache hit rates. Hit rates are dashboarded ([docs/12](12-observability-and-monitoring.md)) — an unexpectedly low hit rate is a bug.
+**Exact then semantic:** the exact cache is a hash lookup (free); the semantic cache costs one
+already‑cached query embedding and catches paraphrases the exact layer misses. The semantic layer is
+**entitlement‑scoped** — a hit never crosses tiers/tenants. **Normalization** (lowercasing,
+whitespace, semantic‑equivalent rewrite) widens the exact response/rewrite hit rates. Hit rates
+(`response_cache_hit`, `semantic_cache_hit`) are dashboarded ([docs/12](12-observability-and-monitoring.md)) — an unexpectedly low hit
+rate is a bug.
 
 ---
 

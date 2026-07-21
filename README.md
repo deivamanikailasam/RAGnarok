@@ -89,10 +89,15 @@ tokenization, latency, cost, and quality.
 
 ## Implementation status
 
-The system is implemented as a runnable Python package (`src/ragnarok/`) built in 27 steps that map
+The system is implemented as a runnable Python package (`src/ragnarok/`) built in 28 steps that map
 1:1 to [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md). Every step is committed individually with
 tests. The whole pipeline runs **fully offline** using deterministic local backends (no GPU/LLM
 required) for development and CI, and switches to real models/stores by environment variables.
+
+Runtime cost/latency/token use is **actively managed per query** (Step 28): adaptive model routing
+(simple queries → small model), dynamic per‑query token budgets, and a semantic response cache for
+paraphrases — on top of the caching, streaming, reranking, and quantization the earlier steps add.
+See [docs/14 — Optimization Playbook](docs/14-optimization-playbook.md).
 
 ```bash
 pip install -e ".[dev]"
@@ -124,7 +129,8 @@ RAGnarok/
 │   ├── guardrails/            # docs/09
 │   ├── serving/               # docs/10  (FastAPI + Slack)
 │   ├── eval/                  # docs/11
-│   └── observability/         # docs/12
+│   ├── observability/         # docs/12
+│   └── optimization/          # Step 28 (adaptive routing, budgets, semantic cache)
 ├── datasets/golden/           # golden test data (docs/11)
 └── tests/
 ```

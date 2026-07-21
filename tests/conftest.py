@@ -50,9 +50,11 @@ def _enrichment_for(messages) -> str:
 @pytest.fixture
 def sample_index():
     import ragnarok.cache as cache_mod
+    from ragnarok.optimization.semantic_cache import reset_semantic_cache
 
     cache_mod.get_cache.cache_clear()
     get_embedding_client.cache_clear()
+    reset_semantic_cache()
     reset_clients()
     set_role_client("llm_large", FakeLLM(handler=lambda m, s: _enrichment_for(m)))
 
@@ -67,3 +69,4 @@ def sample_index():
     reset_clients()
     cache_mod.get_cache.cache_clear()
     get_embedding_client.cache_clear()
+    reset_semantic_cache()

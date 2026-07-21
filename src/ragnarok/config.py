@@ -129,6 +129,28 @@ class CachingCfg(BaseModel):
     rewrite_ttl_s: int = 3600
 
 
+class OptimizationCfg(BaseModel):
+    """Runtime cost/latency/token management (Step 28)."""
+
+    adaptive_routing: bool = True  # route simple queries to the small generation model
+    semantic_cache: bool = True  # serve paraphrased repeats from an embedding-similarity cache
+    semantic_cache_threshold: float = 0.90  # cosine >= this counts as a hit
+    semantic_cache_max_entries: int = 2000
+    simple_intents: list[str] = Field(
+        default_factory=lambda: ["factoid", "policy_lookup", "faq"]
+    )
+    simple_generation_role: str = "llm_small"
+    complex_generation_role: str = "llm_large"
+    # dynamic per-query budgets (simple queries get a tighter budget -> fewer tokens, lower latency)
+    simple_rerank_top_n: int = 4
+    complex_rerank_top_n: int = 8
+    simple_context_tokens: int = 1500
+    complex_context_tokens: int = 3500
+    simple_max_output_tokens: int = 512
+    complex_max_output_tokens: int = 1024
+    max_cost_per_query_usd: float = 0.0  # 0 = disabled; > 0 forces the cheap path when exceeded
+
+
 class Settings(BaseModel):
     env: str = "local"
     models: Models
@@ -141,6 +163,7 @@ class Settings(BaseModel):
     observability: ObsCfg = Field(default_factory=ObsCfg)
     serving: ServingCfg = Field(default_factory=ServingCfg)
     caching: CachingCfg = Field(default_factory=CachingCfg)
+    optimization: OptimizationCfg = Field(default_factory=OptimizationCfg)
 
 
 # --------------------------------------------------------------------------- loading

@@ -21,8 +21,19 @@ def _messages(question: str, ctx: AssembledContext) -> list[dict[str, str]]:
     return prompts().render("answer_generator", "latest", question=question, context=context_text)
 
 
-async def generate_answer(question: str, ctx: AssembledContext, *, role_name: str = "llm_large") -> str:
-    resp = await resilience.call(role_name, _messages(question, ctx), fallback_role="llm_small")
+async def generate_answer(
+    question: str,
+    ctx: AssembledContext,
+    *,
+    role_name: str = "llm_large",
+    max_tokens: int | None = None,
+) -> str:
+    # llm_small is the natural fallback; if we're already routing to it, fall back to large instead.
+    fallback = "llm_large" if role_name == "llm_small" else "llm_small"
+    kw = {"max_tokens": max_tokens} if max_tokens else {}
+    resp = await resilience.call(
+        role_name, _messages(question, ctx), fallback_role=fallback, stage="generate", **kw
+    )
     return resp.content
 
 

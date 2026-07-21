@@ -12,7 +12,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 
 from ragnarok.cache import get_cache, get_json, make_key, set_json
-from ragnarok.config import get_settings
+from ragnarok.config import GenerationCfg, get_settings
 from ragnarok.generation.context import Citation, build_context
 from ragnarok.generation.context import Citation as _Citation
 from ragnarok.generation.generate import generate_answer
@@ -22,6 +22,8 @@ from ragnarok.guardrails.input import check_input
 from ragnarok.guardrails.output import check_output
 from ragnarok.observability import metrics
 from ragnarok.observability.trace import span, trace
+from ragnarok.optimization.budget import budget_for
+from ragnarok.optimization.semantic_cache import get_semantic_cache
 from ragnarok.providers import role
 from ragnarok.retrieval.orchestrator import retrieve
 from ragnarok.retrieval.preprocess import QueryPlan, preprocess
@@ -113,6 +115,7 @@ async def answer(
         # Response cache (Step 27): identical question + entitlements served instantly.
         # Only consulted when there's no chat history (follow-ups depend on context).
         cache = get_cache()
+        opt = get_settings().optimization
         ckey = _cache_key(iv.sanitized, user, collection)
         if not history and (cached := get_json(cache, ckey)) is not None:
             metrics.collector().inc("response_cache_hit")
@@ -120,6 +123,21 @@ async def answer(
             result.cache_hit = True
             result.trace_id = trace_id
             return result
+
+        # Semantic response cache (Step 28): serve paraphrased repeats within the same entitlements.
+        query_embedding: list[float] | None = None
+        if not history and opt.semantic_cache:
+            with span("semantic_cache"):
+                from ragnarok.ingestion.embedding import get_embedding_client
+
+                query_embedding = get_embedding_client().embed_texts([iv.sanitized])[0].dense
+                hit = get_semantic_cache().lookup(query_embedding, user.entitlements)
+            if hit is not None:
+                metrics.collector().inc("semantic_cache_hit")
+                result = _deserialize(hit)
+                result.cache_hit = True
+                result.trace_id = trace_id
+                return result
 
         # 2. pre-process (query optimizer + source identifier)
         with span("preprocess"):
@@ -138,11 +156,27 @@ async def answer(
         with span("retrieve") as s:
             results = retrieve(pre, user, store, features, collection=collection)
             s.set(returned=len(results))
-        ctx = build_context(results)
+
+        # Adaptive budget (Step 28): route simple, confident queries to the small model with a
+        # tighter context/token budget; complex/uncertain ones to the large model.
+        confidence = results[0].final_score if results else 0.0
+        budget = budget_for(pre.plan, confidence, cfg=opt)
+        metrics.collector().inc("generation_by_tier", tier=budget.tier)
+        metrics.collector().inc("generation_by_role", role=budget.generation_role)
+
+        gen_cfg = GenerationCfg(
+            max_context_chunks=budget.rerank_top_n,
+            context_budget_tokens=budget.context_budget_tokens,
+        )
+        ctx = build_context(results[: budget.rerank_top_n], cfg=gen_cfg)
 
         # 4. generation + post-processing
-        with span("generate"):
-            raw = await generate_answer(pre.plan.rewritten_query, ctx)
+        with span("generate") as s:
+            s.set(role=budget.generation_role, tier=budget.tier, reason=budget.reason)
+            raw = await generate_answer(
+                pre.plan.rewritten_query, ctx,
+                role_name=budget.generation_role, max_tokens=budget.max_output_tokens,
+            )
         with span("postprocess"):
             pp = await postprocess(pre.plan.rewritten_query, raw, ctx)
 
@@ -174,7 +208,10 @@ async def answer(
         )
         # cache only confident, grounded answers (never abstentions/blocks)
         if gv.grounded and not history:
-            set_json(cache, ckey, _serialize(result), ttl_s=get_settings().caching.response_ttl_s)
+            serialized = _serialize(result)
+            set_json(cache, ckey, serialized, ttl_s=get_settings().caching.response_ttl_s)
+            if opt.semantic_cache and query_embedding is not None:
+                get_semantic_cache().store(query_embedding, user.entitlements, serialized)
         return result
 
 

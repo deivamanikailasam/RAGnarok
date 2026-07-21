@@ -32,6 +32,7 @@ check against reality. (The system is general; the use case keeps us honest.)
 | Much knowledge lives in **tables** (pricing/SLA matrices) | **Table‑aware ingestion** over naive text splitting (Steps 9–11) |
 | CS agents ask **short follow‑ups** in a live chat ("and for annual?") | **Query rewriting w/ thread context** (Step 14) |
 | Answers must be **fast enough for live chat** | **Streaming + first token < 1s**; retrieve broad, rerank narrow (Steps 16, 19) |
+| Most questions are **simple** (a factoid/policy lookup), a few are complex | **Adaptive model routing + per‑query budgets + semantic cache** so we don't pay large‑model cost on every query (Step 28) |
 | **Deprecated** policies must never be quoted as current | **Authority/freshness signals** demote stale docs (Step 13) |
 | Security: an agent must not see docs their role can't access | **ACL filtering inside retrieval**, not in the prompt (Step 22) |
 | Leadership needs proof it's accurate before rollout, and that it *stays* accurate | **Golden‑set gate (pre‑prod) + live scoring (post‑prod)** (Steps 24–25) |
@@ -48,6 +49,7 @@ PHASE B  Offline / ingest    Steps 4–13   turn GDocs into a searchable, enrich
 PHASE C  Online / answer     Steps 14–21  turn a question into a grounded, cited answer
 PHASE D  Safety & serving    Steps 22–23  guardrails + Slack/API surface
 PHASE E  Prove & operate     Steps 24–27  evaluation, observability, deploy, optimize
+PHASE F  Cost/latency layer  Step  28     adaptive routing, per-query budgets, semantic cache
 ```
 
 You build the offline plane before the online plane because **you cannot retrieve from an index
@@ -586,6 +588,70 @@ are zero‑downtime; failures degrade visibly; cost/query and TTFT stay within b
 
 ---
 
+# PHASE F — Runtime cost / latency / token management
+
+## Step 28 — Adaptive routing, per‑query budgets, and a semantic cache
+
+**Business driver:** CS agents ask a *lot* of questions, and the large majority are simple factoids
+or policy lookups ("what's the enterprise refund window?"). Paying large‑model latency and tokens on
+every one — and re‑answering the same question phrased three different ways — is money and seconds we
+don't need to spend. This step makes cost, latency, and token use **actively managed per request**,
+not just incidentally reduced by the caches and reranking already in place. Deep dive:
+[`docs/14`](14-optimization-playbook.md).
+
+> The earlier steps already cut cost/latency in many places (caching Steps 7/9/14/27, streaming
+> Step 20, reranked/budgeted context Steps 17/19, right‑sized agents + quantization Steps 2/3,
+> token/cost metrics Step 26). Step 28 adds the **decision layer** on top of them: *for this
+> specific query, how much compute is warranted?*
+
+**What you build** (`ragnarok.optimization`):
+
+1. **Adaptive model routing** (`budget.py`) — a deterministic, no‑extra‑LLM policy that classifies
+   each query from its **intent** (from the query optimizer, Step 14), its **hop count**
+   (single vs decomposed), and its **retrieval confidence** (top rerank score). Simple + confident →
+   the **small** generation model with a **tighter** context/token budget; complex or low‑confidence
+   → the **large** model with the full budget.
+2. **Dynamic per‑query budgets** — `rerank_top_n`, `context_budget_tokens`, and `max_output_tokens`
+   scale with the tier, so a simple query packs 4 chunks / ~1.5k tokens instead of 8 / ~3.5k.
+3. **Semantic response cache** (`semantic_cache.py`) — keyed on the query **embedding** (not just the
+   normalized string), it serves a stored answer when a new query is cosine‑similar to a prior one
+   **and the caller's entitlements match**. This catches the long tail of paraphrases the exact
+   cache (Step 27) misses.
+
+**How:** the online pipeline (Step 23) consults the exact cache, then the semantic cache (one cheap,
+already‑cached query embedding), then — after retrieval — computes the `QueryBudget` and applies it to
+context assembly and generation. Every decision is traced (`tier`, `role`, `reason`) and counted in
+metrics (`generation_by_tier`, `generation_by_role`, `semantic_cache_hit`).
+
+**Why this, not the alternatives:**
+
+| Decision | Chosen | Rejected | Why (business) |
+|---|---|---|---|
+| Which model generates | **Route by intent + confidence** | Always use the large model | ~70–80% of CS questions are simple; a 7B answers them well at a fraction of the cost/latency, and the large model is reserved for the comparisons/multi‑hop that need it |
+| Routing mechanism | **Deterministic policy on existing signals** | An LLM "router" call | a router LLM adds latency/cost to *every* query — self‑defeating; intent + confidence are already computed, so routing is free |
+| Budget | **Dynamic per‑query** | One fixed context size | simple queries don't need 8 chunks; trimming input tokens is the #1 cost lever, and it *also* cuts latency |
+| Cache | **Semantic (embedding) + exact** | Exact‑string only | users paraphrase; an embedding cache turns "how long can enterprise get a refund?" into a hit for a prior "enterprise refund window?" |
+| Cache safety | **Scoped by entitlements** | Global cache | never serve one tier/role's answer to another — security must survive caching |
+| Safety of routing | **Confidence gate + always keeps grounding gate** | Trust the small model blindly | if retrieval is weak, escalate to the large model; and the grounding gate (Step 21) still guards correctness regardless of tier |
+
+**Optimizations delivered (with the lever each pulls):**
+
+- **Cost** ↓ large‑model calls avoided on the simple majority; semantic cache serves paraphrased
+  repeats at zero LLM cost.
+- **Latency** ↓ small‑model generation is faster; tighter context = fewer prompt tokens = lower TTFT;
+  a semantic hit skips retrieval + generation entirely.
+- **Tokens** ↓ per‑query context budget caps input tokens; smaller `max_output_tokens` on simple
+  answers caps output tokens.
+- **Predictability** — `max_cost_per_query_usd` can force the cheap path when a query would exceed a
+  ceiling; tiers and hit‑rates are dashboarded (Step 26) so the savings are measured, not assumed.
+
+**Done when:** simple queries are served by the small model (verified in traces/metrics), paraphrased
+repeats hit the semantic cache within the same entitlement scope, complex/low‑confidence queries still
+escalate to the large model, and the golden‑set gate (Step 24) confirms quality holds while
+cost/query and TTFT drop.
+
+---
+
 ## Appendix — Decision log (the "why not" at a glance)
 
 | Area | We chose | Over | One‑line reason |
@@ -615,6 +681,9 @@ are zero‑downtime; failures degrade visibly; cost/query and TTFT stay within b
 | Quality assurance | Golden gate + post‑prod scoring | manual QA | proven pre‑launch, protected after |
 | Observability | LLM‑native tracing (Langfuse) | generic APM | tokens/prompt/grounding per stage |
 | Scale | Config‑only, hybrid burst | prod rewrite | grow without re‑architecting |
+| Generation model per query | Adaptive routing (small vs large) | always the large model | simple majority answered cheaply; large model reserved for hard queries |
+| Query routing | Deterministic policy on existing signals | an LLM router call | free routing; no per‑query latency tax |
+| Response cache | Semantic (embedding) + exact, entitlement‑scoped | exact‑string only | catches paraphrases; never crosses tiers |
 
 ---
 
