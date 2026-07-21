@@ -18,6 +18,8 @@ from ragnarok.generation.grounding import check_grounding
 from ragnarok.generation.postprocess import postprocess
 from ragnarok.guardrails.input import check_input
 from ragnarok.guardrails.output import check_output
+from ragnarok.observability import metrics
+from ragnarok.observability.trace import span, trace
 from ragnarok.providers import role
 from ragnarok.retrieval.orchestrator import retrieve
 from ragnarok.retrieval.preprocess import QueryPlan, preprocess
@@ -76,50 +78,69 @@ async def answer(
     history = history or []
     trace_id = uuid.uuid4().hex
 
-    # 1. input guardrails
-    iv = check_input(query, user)
-    if not iv.allowed:
+    with trace("ask", trace_id=trace_id, user=user.id) as tr:
+        # 1. input guardrails
+        with span("guard.input") as s:
+            iv = check_input(query, user)
+            s.set(allowed=iv.allowed, reason=iv.reason, flags=iv.flags)
+        if not iv.allowed:
+            metrics.record_answer(abstained=False, blocked=True)
+            return AnswerResult(
+                text=_REFUSALS.get(iv.reason, "I can't process that request."),
+                blocked=True, trace_id=trace_id,
+            )
+
+        # 2. pre-process (query optimizer + source identifier)
+        with span("preprocess"):
+            pre = await preprocess(iv.sanitized, history, user, facets)
+
+        # 2b. chitchat gate: skip retrieval + heavy generation entirely
+        if pre.skip_retrieval:
+            text = await _direct_answer(pre.plan)
+            ov = check_output(text)
+            metrics.record_answer(abstained=False, blocked=not ov.allowed)
+            return AnswerResult(
+                text=ov.answer if ov.allowed else "I can't answer that.", trace_id=trace_id
+            )
+
+        # 3. retrieval (filter -> hybrid -> rerank -> signals)
+        with span("retrieve") as s:
+            results = retrieve(pre, user, store, features, collection=collection)
+            s.set(returned=len(results))
+        ctx = build_context(results)
+
+        # 4. generation + post-processing
+        with span("generate"):
+            raw = await generate_answer(pre.plan.rewritten_query, ctx)
+        with span("postprocess"):
+            pp = await postprocess(pre.plan.rewritten_query, raw, ctx)
+
+        # 5. grounding gate (abstain if unsupported)
+        with span("grounding") as s:
+            gv = check_grounding(pp, ctx)
+            s.set(score=gv.score, grounded=gv.grounded)
+        metrics.record_grounding(gv.score)
+
+        # 6. output guardrails
+        with span("guard.output"):
+            ov = check_output(gv.answer)
+        if not ov.allowed:
+            metrics.record_answer(abstained=not gv.grounded, blocked=True)
+            return AnswerResult(text="I can't share that answer.", blocked=True,
+                                retrieved=len(results), trace_id=trace_id)
+
+        metrics.record_answer(abstained=not gv.grounded, blocked=False)
+        tr.root.set(tokens=tr.total_tokens, cost=tr.total_cost)
         return AnswerResult(
-            text=_REFUSALS.get(iv.reason, "I can't process that request."),
-            blocked=True, trace_id=trace_id,
+            text=ov.answer,
+            citations=pp.resolved_citations,
+            followups=pp.followups,
+            grounded=gv.grounded,
+            grounding_score=gv.score,
+            abstained=not gv.grounded,
+            retrieved=len(results),
+            trace_id=trace_id,
         )
-
-    # 2. pre-process (query optimizer + source identifier)
-    pre = await preprocess(iv.sanitized, history, user, facets)
-
-    # 2b. chitchat gate: skip retrieval + heavy generation entirely
-    if pre.skip_retrieval:
-        text = await _direct_answer(pre.plan)
-        ov = check_output(text)
-        return AnswerResult(text=ov.answer if ov.allowed else "I can't answer that.", trace_id=trace_id)
-
-    # 3. retrieval (filter -> hybrid -> rerank -> signals)
-    results = retrieve(pre, user, store, features, collection=collection)
-    ctx = build_context(results)
-
-    # 4. generation + post-processing
-    raw = await generate_answer(pre.plan.rewritten_query, ctx)
-    pp = await postprocess(pre.plan.rewritten_query, raw, ctx)
-
-    # 5. grounding gate (abstain if unsupported)
-    gv = check_grounding(pp, ctx)
-
-    # 6. output guardrails
-    ov = check_output(gv.answer)
-    if not ov.allowed:
-        return AnswerResult(text="I can't share that answer.", blocked=True,
-                            retrieved=len(results), trace_id=trace_id)
-
-    return AnswerResult(
-        text=ov.answer,
-        citations=pp.resolved_citations,
-        followups=pp.followups,
-        grounded=gv.grounded,
-        grounding_score=gv.score,
-        abstained=not gv.grounded,
-        retrieved=len(results),
-        trace_id=trace_id,
-    )
 
 
 async def answer_once(query: str) -> AnswerResult:

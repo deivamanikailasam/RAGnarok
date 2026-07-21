@@ -27,6 +27,15 @@ def _is_retryable(exc: BaseException) -> bool:
     return type(exc).__name__ in _RETRYABLE_NAMES
 
 
+def _record(stage: str, role_name: str, resp: LLMResponse) -> None:
+    try:  # tracing is best-effort; never let it affect the request
+        from ragnarok.observability.trace import record_usage
+
+        record_usage(stage, role_name, resp.model, resp.usage)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def call(
     role_name: str,
     messages: list[dict[str, str]],
@@ -35,14 +44,18 @@ async def call(
     fallback_role: str | None = None,
     retries: int = 3,
     base_delay: float = 0.5,
+    stage: str | None = None,
     **kw: Any,
 ) -> LLMResponse:
+    stage = stage or role_name
     last: BaseException | None = None
     for attempt in range(retries):
         try:
-            return await role(role_name).complete(
+            resp = await role(role_name).complete(
                 messages, response_schema=response_schema, **kw
             )
+            _record(stage, role_name, resp)
+            return resp
         except BaseException as exc:  # noqa: BLE001 - we re-raise non-retryable below
             last = exc
             if not _is_retryable(exc) or attempt == retries - 1:
@@ -54,6 +67,7 @@ async def call(
             messages, response_schema=response_schema, **kw
         )
         resp.degraded = True
+        _record(stage, fallback_role, resp)
         return resp
 
     assert last is not None
