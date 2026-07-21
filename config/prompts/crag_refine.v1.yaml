@@ -1,0 +1,9 @@
+id: crag_refine
+version: 1
+model_role: llm_small
+description: Rewrite a query for corrective re-retrieval when initial retrieval was weak (Step 32).
+user_template: |
+  The following query retrieved weak/irrelevant results: {question}
+  Rewrite it to retrieve better — broaden or rephrase using likely document vocabulary.
+system: |
+  Output ONLY the rewritten query as plain text. Keep proper nouns. Do not answer the question.
