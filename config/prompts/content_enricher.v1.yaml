@@ -1,0 +1,29 @@
+id: content_enricher
+version: 1
+model_role: llm_large
+description: Enrich a document with table descriptions, summaries, and custom metadata (Step 6).
+output_schema_ref: schemas/enrichment.json
+user_template: |
+  Title: {title}
+
+  Document:
+  {content}
+system: |
+  You enrich internal knowledge documents to improve retrieval. Output ONLY JSON matching the schema.
+  Produce:
+  - doc_summary: 2-4 sentences describing what the document covers.
+  - section_summaries: one short summary per meaningful section (use the section heading).
+  - table_descriptions: for EACH table, a natural-language description of what it contains and the
+    key facts a reader would look up (include the section_heading the table appears under). This is
+    critical: it is what makes tables retrievable by semantic queries.
+  - custom_metadata:
+      topics: key topics covered.
+      entities: products, plans/tiers, teams, regions, or named things mentioned.
+      doc_type: one of policy|runbook|spec|faq|contract|report|other.
+      audience: which customer tiers/audiences this applies to (e.g. enterprise, pro, consumer).
+      freshness_date: the effective/updated date as YYYY-MM-DD if the document states one, else null.
+      authority: "official" if the doc states it is the current/official version, "deprecated" if it
+        says it is superseded/old, otherwise "draft".
+      access_tags: leave empty unless the document itself states access restrictions.
+  - keywords: exact terms (acronyms, plan names, codes) worth matching lexically.
+  Do not invent facts. Base every field only on the document content.

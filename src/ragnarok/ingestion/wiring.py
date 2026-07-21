@@ -7,11 +7,12 @@ performs load -> normalize -> hash-diff -> register (idempotency), which is inde
 
 from __future__ import annotations
 
+from ragnarok.ingestion.enrich import enrich_sync
 from ragnarok.ingestion.pipeline import IngestionPipeline
 from ragnarok.ingestion.registry import Registry, SqliteRegistry
 
 
 def build_pipeline(registry: Registry | None = None) -> IngestionPipeline:
     registry = registry or SqliteRegistry()
-    # Steps 6/8/9/10/11 will set enrich_fn / index_fn here.
-    return IngestionPipeline(registry=registry)
+    # Step 6: enrichment stage. Steps 8/9/10/11 will set index_fn (chunk -> embed -> store).
+    return IngestionPipeline(registry=registry, enrich_fn=enrich_sync)
