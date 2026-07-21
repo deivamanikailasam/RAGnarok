@@ -28,6 +28,7 @@ def available() -> list[str]:
 
 # Import strategy modules so they self-register. Each is a separate step.
 from ragnarok.strategies import hybrid as _hybrid  # noqa: E402,F401
+from ragnarok.strategies import hyde as _hyde  # noqa: E402,F401
 from ragnarok.strategies import naive as _naive  # noqa: E402,F401
 
 __all__ = ["RagStrategy", "StrategyContext", "StrategyResult", "get_strategy", "available", "register"]

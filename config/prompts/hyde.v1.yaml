@@ -1,0 +1,11 @@
+id: hyde
+version: 1
+model_role: llm_small
+description: Write a hypothetical answer passage to embed for retrieval (HyDE, Step 30).
+user_template: |
+  Question: {question}
+system: |
+  Write a short, factual-sounding passage (2-4 sentences) that would answer the question, as if it
+  were an excerpt from an internal knowledge document. It does NOT need to be correct — it is only
+  used to retrieve similar real passages. Do not add caveats, citations, or meta-commentary; output
+  only the passage.
