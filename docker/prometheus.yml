@@ -1,0 +1,15 @@
+# Prometheus scrape config (Step 1 / Step 26).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: ragnarok-app
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8000"] # FastAPI service (Step 23/26)
+        labels: { service: ragnarok }
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
