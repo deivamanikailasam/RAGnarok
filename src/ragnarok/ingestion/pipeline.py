@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from ragnarok.ingestion.connectors import load_any
+from ragnarok.ingestion.dedup import NearDupIndex
 from ragnarok.ingestion.models import NormalizedDoc, SourceDocument
 from ragnarok.ingestion.normalize import normalize
 from ragnarok.ingestion.registry import DocRecord, Registry, SqliteRegistry
@@ -22,13 +23,14 @@ from ragnarok.ingestion.registry import DocRecord, Registry, SqliteRegistry
 class IngestSummary:
     processed: int = 0
     skipped: int = 0
+    duplicates: int = 0
     failed: int = 0
     errors: list[str] = field(default_factory=list)
 
     def __str__(self) -> str:
         return (
             f"ingest: processed={self.processed} skipped={self.skipped} "
-            f"failed={self.failed}"
+            f"duplicates={self.duplicates} failed={self.failed}"
         )
 
 
@@ -40,13 +42,14 @@ class IngestionPipeline:
         # later steps inject these; None keeps the stage a no-op so the pipeline stays runnable
         enrich_fn: Callable[[NormalizedDoc], object] | None = None,
         index_fn: Callable[[object], None] | None = None,
+        dedup: bool = True,
     ) -> None:
         self.registry: Registry = registry or SqliteRegistry()
         self._enrich_fn = enrich_fn
         self._index_fn = index_fn
+        self._dedup_enabled = dedup
 
-    def _process_document(self, src: SourceDocument) -> None:
-        norm = normalize(src)
+    def _process_document(self, norm: NormalizedDoc) -> None:
         # Stage: enrichment (Step 6) — no-op until an enricher is injected.
         enriched: object = self._enrich_fn(norm) if self._enrich_fn else norm
         # Stage: chunk + embed + store (Steps 8-10) — no-op until an indexer is injected.
@@ -55,13 +58,23 @@ class IngestionPipeline:
 
     def run(self, paths: list[str], *, full_rebuild: bool = False) -> IngestSummary:
         summary = IngestSummary()
+        dedup = NearDupIndex() if self._dedup_enabled else None  # per-run scope
         for uri in paths:
             for src in load_any(uri):
                 if not full_rebuild and self.registry.is_unchanged(src.doc_id, src.content_hash):
                     summary.skipped += 1
                     continue
+                norm = normalize(src)
+                # Near-duplicate detection (Step 7): collapse copies to one canonical doc.
+                # Compare body content only (titles may differ by filename/export).
+                body = "\n".join(s.text for s in norm.sections)
+                if dedup is not None:
+                    if dedup.find_duplicate(body) is not None:
+                        summary.duplicates += 1
+                        continue
+                    dedup.add(src.doc_id, body)
                 try:
-                    self._process_document(src)
+                    self._process_document(norm)
                     self.registry.upsert(
                         DocRecord(src.doc_id, src.content_hash, status="ingested")
                     )

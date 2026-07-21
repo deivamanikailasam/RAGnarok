@@ -98,14 +98,24 @@ class EnrichedDocument(BaseModel):
 
 
 async def enrich(norm: NormalizedDoc, *, role_name: str = "llm_large") -> EnrichedDocument:
+    version = prompts().label("content_enricher")
+    # Enrichment cache (Step 7): key on content hash + prompt version, so re-ingest of unchanged
+    # content is a cache hit and a prompt/model bump re-enriches only affected docs.
+    from ragnarok.cache import get_cache, get_json, make_key, set_json
+
+    cache = get_cache()
+    key = make_key("enr", version, norm.content_hash)
+    if (cached := get_json(cache, key)) is not None:
+        return EnrichedDocument.model_validate(cached)
+
     msgs = prompts().render(
         "content_enricher", "latest", title=norm.title, content=norm.render_for_llm()
     )
     enr = await generate_structured(role_name, msgs, Enrichment, fallback_role="llm_small")
     model = getattr(get_settings().models, role_name).model
-    return EnrichedDocument.from_norm(
-        norm, enr, model=model, version=prompts().label("content_enricher")
-    )
+    doc = EnrichedDocument.from_norm(norm, enr, model=model, version=version)
+    set_json(cache, key, doc.model_dump())
+    return doc
 
 
 def enrich_sync(norm: NormalizedDoc) -> EnrichedDocument:
