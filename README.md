@@ -66,6 +66,7 @@ tokenization, latency, cost, and quality.
 | 12 | [Observability & Monitoring](docs/12-observability-and-monitoring.md) | Tracing, metrics, logs, cost accounting |
 | 13 | [Deployment, Scaling & Operations](docs/13-deployment-scaling-operations.md) | Runbooks, scaling, security, DR |
 | 14 | [Optimization Playbook](docs/14-optimization-playbook.md) | Consolidated latency / cost / token / quality wins |
+| 15 | [RAG Architectures](docs/15-rag-architectures.md) | The 12 selectable strategies (verification + catalog) |
 
 ## Reference technology stack (all local‑first)
 
@@ -89,7 +90,7 @@ tokenization, latency, cost, and quality.
 
 ## Implementation status
 
-The system is implemented as a runnable Python package (`src/ragnarok/`) built in 28 steps that map
+The system is implemented as a runnable Python package (`src/ragnarok/`) built in 39 steps that map
 1:1 to [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md). Every step is committed individually with
 tests. The whole pipeline runs **fully offline** using deterministic local backends (no GPU/LLM
 required) for development and CI, and switches to real models/stores by environment variables.
@@ -98,6 +99,17 @@ Runtime cost/latency/token use is **actively managed per query** (Step 28): adap
 (simple queries → small model), dynamic per‑query token budgets, and a semantic response cache for
 paraphrases — on top of the caching, streaming, reranking, and quantization the earlier steps add.
 See [docs/14 — Optimization Playbook](docs/14-optimization-playbook.md).
+
+**12 RAG architectures are implemented as pluggable, eval-comparable strategies** (Steps 29–39) —
+the 8 well-known patterns (Naive, Hybrid, HyDE, Corrective/CRAG, Graph, Hybrid vector+graph,
+Multimodal, Adaptive, Agentic) plus three the usual diagrams omit (RAG-Fusion, Self-RAG, RAPTOR).
+Select with `rag.strategy` or let the Adaptive router choose per query. Genuineness verification and
+the full catalog are in [docs/15 — RAG Architectures](docs/15-rag-architectures.md).
+
+```bash
+ragnarok ask "…"                       # uses rag.strategy (default: hybrid)
+# or per call via the API / answer(strategy="hyde"|"graph"|"agentic"|…)
+```
 
 ```bash
 pip install -e ".[dev]"
@@ -130,7 +142,9 @@ RAGnarok/
 │   ├── serving/               # docs/10  (FastAPI + Slack)
 │   ├── eval/                  # docs/11
 │   ├── observability/         # docs/12
-│   └── optimization/          # Step 28 (adaptive routing, budgets, semantic cache)
+│   ├── optimization/          # Step 28 (adaptive routing, budgets, semantic cache)
+│   ├── strategies/            # Steps 29-39 (12 RAG architectures, docs/15)
+│   └── agent/                 # Step 39 (Agentic RAG: tools, memory, ReAct)
 ├── datasets/golden/           # golden test data (docs/11)
 └── tests/
 ```

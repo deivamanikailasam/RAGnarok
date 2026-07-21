@@ -26,6 +26,17 @@ models:
     url: ${RERANKER_URL}
     model: bge-reranker-v2-m3
 
+rag:                                      # Steps 29-39 — selectable RAG architecture (docs/15)
+  strategy: hybrid                        # naive|hybrid|hyde|fusion|corrective|self_rag|graph|
+  #                                         hybrid_graph|multimodal|raptor|adaptive|agentic
+  fusion_num_queries: 4                   # RAG-Fusion query variations (Step 31)
+  corrective_grade_min: 0.30              # CRAG: below this, correct/refine (Step 32)
+  self_rag_relevance_min: 0.30            # Self-RAG: keep chunks at/above this relevance (Step 33)
+  graph_expand_hops: 1                    # Graph RAG neighborhood expansion (Steps 34-35)
+  raptor_levels: 2                        # RAPTOR summary-tree depth (Step 37)
+  adaptive_multistep_intents: [comparison, multi_hop, howto]  # -> fusion route (Step 38)
+  agentic_max_steps: 4                    # Agentic RAG ReAct step budget (Step 39)
+
 retrieval:                                # docs/07
   top_k_dense: 40
   top_k_sparse: 40

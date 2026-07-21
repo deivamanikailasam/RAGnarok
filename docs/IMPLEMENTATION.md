@@ -50,6 +50,7 @@ PHASE C  Online / answer     Steps 14–21  turn a question into a grounded, cit
 PHASE D  Safety & serving    Steps 22–23  guardrails + Slack/API surface
 PHASE E  Prove & operate     Steps 24–27  evaluation, observability, deploy, optimize
 PHASE F  Cost/latency layer  Step  28     adaptive routing, per-query budgets, semantic cache
+PHASE G  RAG architectures   Steps 29–39  12 selectable strategies (the 8 patterns + 3 missing)
 ```
 
 You build the offline plane before the online plane because **you cannot retrieve from an index
@@ -652,6 +653,84 @@ cost/query and TTFT drop.
 
 ---
 
+# PHASE G — Selectable RAG architectures (the 8 patterns + missing ones)
+
+The reference "8 RAG Architectures" are all genuine, recognized methods (verification table in
+[docs/15](15-rag-architectures.md)). Rather than pick one, RAGnarok implements each as a **pluggable
+strategy** behind one interface, selected by `rag.strategy` or the Adaptive router, and **comparable
+head-to-head on the same golden set** (Step 24). Every strategy reuses the SHARED generate →
+post-process → grounding-gate → guardrail path, so all inherit citations, abstention, guardrails,
+adaptive budgets (Step 28), and tracing. We also add three genuine methods the diagram omits
+(RAG-Fusion, Self-RAG, RAPTOR).
+
+## Step 29 — Strategy framework (+ Naive & Hybrid)
+
+**What:** `RagStrategy` interface + registry; the pipeline runs the selected strategy then generates.
+Naive (dense-only baseline) and Hybrid (dense+sparse+rerank, the default) ship first.
+**Why this, not the alternatives:** a strategy abstraction makes the 12 architectures swappable and
+**measurable** instead of a hardcoded pipeline; a per-request/config override enables A/B testing.
+**Done when:** `rag.strategy` (or a per-call override) selects the retrieval method; both baseline and
+default pass the golden gate.
+
+## Step 30 — HyDE (Hypothetical Document Embeddings)
+A small LLM writes a hypothetical answer passage; we embed *that* (closer to real passages than a
+short question) plus the original as a hedge. **Why not** embed the bare question — questions and
+answers often use different vocabulary. Gao et al. 2022.
+
+## Step 31 — RAG-Fusion *(added)*
+Generate N diverse query reformulations, retrieve each, fuse with RRF. **Why not** a single query —
+under-specified questions retrieve poorly from one phrasing; multi-query lifts recall, rerank restores
+precision. (Missing from the diagram.)
+
+## Step 32 — Corrective RAG (CRAG)
+Grade retrieval (cross-encoder score); Correct → use as-is, Ambiguous → rewrite+re-retrieve+combine,
+Incorrect → discard and fall back to a relaxed/external knowledge search. **Why not** always trust the
+first retrieval — it lets the generator build on irrelevant context. Yan et al. 2024.
+
+## Step 33 — Self-RAG *(added)*
+Map Self-RAG's reflection tokens to stages: Retrieve? = the needs_retrieval gate; IsRel = filter
+chunks by a relevance reflection; IsSup = the grounding gate. **Why not** feed all retrieved chunks —
+irrelevant context costs tokens and invites hallucination. Asai et al. 2023. (Missing from the diagram.)
+
+## Step 34 — Graph RAG
+Build a lightweight entity graph at ingest (entities + co-occurrence + entity→chunk map); retrieve by
+expanding the query's entities N hops. **Why not** vector-only — multi-hop/relationship questions need
+explicit structure a vector store blurs. Microsoft GraphRAG 2024.
+
+## Step 35 — Hybrid RAG (vector + graph)
+Fuse vector and graph retrieval by RRF, then rerank. **Why not** either alone — vector captures
+semantics, graph captures relationships; the diagram's "Hybrid RAG". Sarmah et al. 2024. (Distinct
+from the dense+sparse `hybrid` default — see the terminology note in docs/15.)
+
+## Step 36 — Multimodal RAG
+Caption images at ingest (VLM hook; alt-text fallback), embed captions, keep the asset reference;
+retrieve across modalities. **Why not** drop non-text — diagrams/screenshots carry answers; captioning
+makes them retrievable and citable. CLIP/ColPali-style.
+
+## Step 37 — RAPTOR *(added)*
+Cluster + summarize chunks into a tree at ingest; index leaves + summary nodes so hybrid retrieval
+spans levels. **Why not** flat chunks only — long documents lose high-level context; RAPTOR gives both
+detail and overview. Sarthi et al. 2024. (Missing from the diagram.)
+
+## Step 38 — Adaptive RAG
+Deterministically classify query complexity (intent + hop count) and route to hybrid / fusion / hyde.
+**Why not** one strategy for all, or an LLM router — a factoid and a comparison need different
+retrieval, and an LLM router taxes every query. Complements Step 28 (which sizes the generation model;
+this sizes the retrieval method). Jeong et al. 2024.
+
+## Step 39 — Agentic RAG
+A bounded ReAct loop with memory (short/long term), planning, and a tool registry (retrieve,
+calculator, and pluggable local/search/cloud tool servers in the MCP style). The agent gathers
+evidence; the shared generator produces the grounded answer. **Why not** an unbounded autonomous agent
+— bounded steps keep latency/cost predictable, and routing evidence through the grounding gate keeps
+agentic answers honest. ReAct (Yao et al. 2022) + tools/MCP.
+
+**Done (Phase G) when:** all 12 strategies are registered, selectable, individually tested, and scored
+on the golden set; the default (`hybrid`) is unchanged; graph/RAPTOR/multimodal augment the index at
+ingest; Adaptive and Agentic compose the others.
+
+---
+
 ## Appendix — Decision log (the "why not" at a glance)
 
 | Area | We chose | Over | One‑line reason |
@@ -684,6 +763,11 @@ cost/query and TTFT drop.
 | Generation model per query | Adaptive routing (small vs large) | always the large model | simple majority answered cheaply; large model reserved for hard queries |
 | Query routing | Deterministic policy on existing signals | an LLM router call | free routing; no per‑query latency tax |
 | Response cache | Semantic (embedding) + exact, entitlement‑scoped | exact‑string only | catches paraphrases; never crosses tiers |
+| RAG architectures | Pluggable strategies, one interface | hardcode a single pattern | 12 architectures swappable + eval‑comparable on one golden set |
+| "Hybrid RAG" term | `hybrid` (dense+sparse) vs `hybrid_graph` (vector+graph) | conflate the two | precise: both are real, they mean different things |
+| Retrieval routing | Adaptive (deterministic complexity classifier) | one strategy for all | factoid vs comparison vs multi‑hop need different retrieval |
+| Agentic loop | Bounded ReAct + shared grounding gate | unbounded autonomous agent | predictable cost/latency; agentic answers still grounded/cited |
+| Missing methods | Added RAG‑Fusion, Self‑RAG, RAPTOR | ship only the diagram's 8 | genuine, high‑value patterns the diagram omits |
 
 ---
 

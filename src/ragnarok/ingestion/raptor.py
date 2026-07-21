@@ -22,7 +22,6 @@ from ragnarok.ingestion.embedding import EmbeddedChunk, embed_chunks
 from ragnarok.ingestion.models import sha256_of
 from ragnarok.prompts import prompts
 from ragnarok.stores.vector import VectorStore
-from ragnarok.structured import generate_structured  # noqa: F401  (kept for parity; not required)
 from ragnarok.tokenization import count_tokens
 
 
