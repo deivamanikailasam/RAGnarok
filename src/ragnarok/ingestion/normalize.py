@@ -33,8 +33,8 @@ def normalize(doc: SourceDocument) -> NormalizedDoc:
             if current.blocks or current.heading:
                 sections.append(current)
             current = Section(heading=_clean_text(block.text), level=block.heading_level, blocks=[])
-        elif block.kind == "table":
-            current.blocks.append(block)  # tables kept structured, not cleaned as prose
+        elif block.kind in ("table", "image"):
+            current.blocks.append(block)  # tables/images kept structured, not cleaned as prose
         else:
             cleaned = _clean_text(block.text)
             if cleaned:

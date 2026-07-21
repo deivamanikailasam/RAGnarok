@@ -25,14 +25,18 @@ def sha256_of(*parts: Any) -> str:
 class Block(BaseModel):
     """A structural unit from a source document."""
 
-    kind: Literal["text", "table"] = "text"
-    text: str = ""
+    kind: Literal["text", "table", "image"] = "text"
+    text: str = ""  # for images: the alt text / caption
     heading_level: int = 0  # 0 = body, 1 = H1, 2 = H2 ...
     # table-only fields
     headers: list[str] = Field(default_factory=list)
     rows: list[list[str]] = Field(default_factory=list)
+    # image-only field (Step 36)
+    src: str = ""  # asset URI/path
 
     def to_markdown(self) -> str:
+        if self.kind == "image":
+            return f"![{self.text}]({self.src})"
         if self.kind != "table" or not self.rows:
             return self.text
         cols = self.headers or [f"c{i}" for i in range(len(self.rows[0]))]

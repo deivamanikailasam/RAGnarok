@@ -130,11 +130,41 @@ def _chunk_table(doc: EnrichedDocument, section: Section, position: int) -> list
     return chunks
 
 
+def _chunk_images(doc: EnrichedDocument, section: Section, position: int) -> list[Chunk]:
+    """Image blocks -> image chunks: caption embedded, asset reference kept (Step 36)."""
+    from ragnarok.ingestion.multimodal import caption_image
+
+    prefix = _context_header(doc, section)
+    meta = _inherit_metadata(doc, section)
+    out = []
+    for block in [b for b in section.blocks if b.kind == "image"]:
+        caption = caption_image(block.src, block.text)
+        out.append(
+            Chunk(
+                chunk_id=sha256_of(doc.doc_id, position, block.src),
+                doc_id=doc.doc_id,
+                text=caption,  # the caption is what gets embedded
+                contextual_prefix=prefix,
+                chunk_type="image",
+                position=position,
+                token_count=count_tokens(caption),
+                metadata={**meta, "modality": "image", "asset_uri": block.src, "alt": block.text},
+                content_hash=sha256_of(caption, block.src),
+            )
+        )
+        position += 1
+    return out
+
+
 def chunk_document(doc: EnrichedDocument) -> list[Chunk]:
     cfg = get_settings().chunking
     chunks: list[Chunk] = []
     position = 0
     for section in doc.sections:
+        if any(b.kind == "image" for b in section.blocks):  # Step 36
+            img_chunks = _chunk_images(doc, section, position)
+            chunks.extend(img_chunks)
+            position += len(img_chunks)
         if section.is_table:
             table_chunks = _chunk_table(doc, section, position)
             chunks.extend(table_chunks)
@@ -145,9 +175,13 @@ def chunk_document(doc: EnrichedDocument) -> list[Chunk]:
                 continue
             section = Section(heading=section.heading, level=section.level,
                               blocks=[b for b in section.blocks if b.kind == "text"])
+        # prose = text blocks only (tables/images are chunked separately above)
+        prose = "\n\n".join(b.text for b in section.blocks if b.kind == "text").strip()
+        if not prose:
+            continue
         prefix = _context_header(doc, section)
         meta = _inherit_metadata(doc, section)
-        for piece in _recursive_split(section.text, cfg.target_tokens, cfg.overlap):
+        for piece in _recursive_split(prose, cfg.target_tokens, cfg.overlap):
             chunks.append(
                 Chunk(
                     chunk_id=sha256_of(doc.doc_id, position, piece),

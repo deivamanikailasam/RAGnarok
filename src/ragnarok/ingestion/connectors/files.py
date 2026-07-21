@@ -15,6 +15,7 @@ from ragnarok.ingestion.models import Block, SourceDocument
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _TABLE_SEP_RE = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$")
+_IMAGE_RE = re.compile(r"^!\[([^\]]*)\]\(([^)]+)\)\s*$")  # ![alt](src)  (Step 36)
 
 TEXT_SUFFIXES = {".md", ".markdown", ".txt"}
 
@@ -46,9 +47,14 @@ def _parse_markdown(text: str) -> list[Block]:
             and i + 1 < len(lines)
             and _TABLE_SEP_RE.match(lines[i + 1])
         )
+        image = _IMAGE_RE.match(line.strip())
         if heading:
             flush_text()
             blocks.append(Block(kind="text", text=heading.group(2).strip(), heading_level=len(heading.group(1))))
+            i += 1
+        elif image:
+            flush_text()
+            blocks.append(Block(kind="image", text=image.group(1).strip(), src=image.group(2).strip()))
             i += 1
         elif is_table_start:
             flush_text()
