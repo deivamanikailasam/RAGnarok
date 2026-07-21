@@ -1,0 +1,47 @@
+# RAGnarok — model serving (Step 2).
+# Kept separate from compose.core.yaml so the model plane scales/upgrades independently of the
+# data plane. Each model *role* gets its own OpenAI-compatible endpoint (Step 3) so a stuck 32B
+# never blocks a 7B query rewrite.
+#
+# Requires NVIDIA GPU + nvidia-container-toolkit. For laptops with no GPU, use Ollama
+# (scripts/serve_models.sh) or the deterministic local model service (RAGNAROK_MODELS_BACKEND=local).
+
+name: ragnarok-serving
+
+services:
+  llm-large: # generation + ingestion enrichment (Steps 6, 20)
+    image: vllm/vllm-openai:latest
+    command: >
+      --model Qwen/Qwen2.5-32B-Instruct-AWQ
+      --quantization awq --max-model-len 16384
+      --gpu-memory-utilization 0.90 --port 8001
+    ports: ["8001:8001"]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+
+  llm-small: # query optimize, source id, post-process, judges (Steps 14, 20, 24)
+    image: vllm/vllm-openai:latest
+    command: >
+      --model Qwen/Qwen2.5-7B-Instruct
+      --max-model-len 16384 --gpu-memory-utilization 0.30 --port 8002
+    ports: ["8002:8002"]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+
+  models: # BGE-M3 embeddings (dense+sparse) + BGE reranker (Steps 9, 17)
+    build:
+      context: ..
+      dockerfile: docker/models.Dockerfile
+    environment:
+      RAGNAROK_MODELS_BACKEND: ${RAGNAROK_MODELS_BACKEND:-flag}
+    command: >
+      uvicorn ragnarok.serving.model_services:app --host 0.0.0.0 --port 7997
+    ports: ["7997:7997"]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]

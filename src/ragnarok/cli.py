@@ -37,7 +37,7 @@ DEFAULT_ENDPOINTS: dict[str, tuple[str, str]] = {
     "llm_large": ("LLM_LARGE_BASE_URL", "http://localhost:8001/v1"),
     "llm_small": ("LLM_SMALL_BASE_URL", "http://localhost:8002/v1"),
     "embedding": ("EMBEDDING_BASE_URL", "http://localhost:7997"),
-    "reranker": ("RERANKER_URL", "http://localhost:7998"),
+    "reranker": ("RERANKER_URL", "http://localhost:7997"),
 }
 
 
