@@ -77,6 +77,9 @@ class VectorStore(Protocol):
     ) -> list[SearchHit]: ...
     def delete_by_doc(self, doc_id: str, collection: str) -> int: ...
     def count(self, collection: str) -> int: ...
+    def switch_alias(self, alias: str, target: str) -> None: ...
+    def get_alias_target(self, alias: str) -> str: ...
+    def list_collections(self) -> list[str]: ...
 
 
 # --------------------------------------------------------------------------- in-memory
@@ -97,9 +100,23 @@ def _sparse_dot(a: dict[int, float], b: dict[int, float]) -> float:
 class InMemoryVectorStore:
     def __init__(self) -> None:
         self._c: dict[str, dict[str, tuple[EmbeddedChunk, dict]]] = {}
+        self._aliases: dict[str, str] = {}
+
+    # --- alias support for blue/green reindex (Step 12) ---
+    def _resolve(self, name: str) -> str:
+        return self._aliases.get(name, name)
+
+    def switch_alias(self, alias: str, target: str) -> None:
+        self._aliases[alias] = target
+
+    def get_alias_target(self, alias: str) -> str:
+        return self._aliases.get(alias, alias)
+
+    def list_collections(self) -> list[str]:
+        return [c for c in self._c if c]
 
     def _coll(self, name: str) -> dict:
-        return self._c.setdefault(name, {})
+        return self._c.setdefault(self._resolve(name), {})
 
     def upsert(self, chunks: list[EmbeddedChunk], collection: str = "chunks") -> None:
         coll = self._coll(collection)
@@ -232,3 +249,23 @@ class QdrantVectorStore:  # pragma: no cover - requires a running Qdrant
 
     def count(self, collection: str = "chunks") -> int:
         return self._client.count(collection).count
+
+    def switch_alias(self, alias: str, target: str) -> None:
+        from qdrant_client import models as qm
+
+        self._client.update_collection_aliases(
+            change_aliases_operations=[
+                qm.CreateAliasOperation(
+                    create_alias=qm.CreateAlias(collection_name=target, alias_name=alias)
+                )
+            ]
+        )
+
+    def get_alias_target(self, alias: str) -> str:
+        for a in self._client.get_aliases().aliases:
+            if a.alias_name == alias:
+                return a.collection_name
+        return alias
+
+    def list_collections(self) -> list[str]:
+        return [c.name for c in self._client.get_collections().collections]
