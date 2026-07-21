@@ -149,32 +149,37 @@ RAGnarok/
 └── tests/
 ```
 
-## Quickstart (local)
+## Quickstart
+
+**➡️ Full step‑by‑step setup & run guide: [docs/SETUP.md](docs/SETUP.md).**
+
+### Tier 1 — try it in 2 minutes (no GPU / Docker / LLM)
 
 ```bash
-# 1. Bring up the local stack (Qdrant, Postgres, Redis, Langfuse, Prometheus, Grafana)
-docker compose -f docker/compose.core.yaml up -d
-
-# 2. Serve local models
-ollama pull qwen2.5:32b-instruct        # large
-ollama pull qwen2.5:7b-instruct         # small
-ollama pull bge-m3                      # embeddings
-
-# 3. Configure (copy and edit)
-cp config/settings.example.yaml config/settings.yaml
-
-# 4. Ingest a corpus, then ask a question
-ragnarok ingest ./datasets/raw
-ragnarok ask "What is our refund policy for enterprise customers?"
-
-# 5. Run the golden‑set evaluation
-ragnarok eval --suite golden
+pip install -e ".[dev]"          # install
+make test                        # run the test suite (no services needed)
+make demo                        # offline retrieval demo over the sample corpus
+make gate                        # deterministic golden-set eval gate
 ```
 
-See [docs/01](docs/01-environment-and-infrastructure.md) for the full setup.
+### Tier 2 — full local stack (real grounded answers)
+
+```bash
+make up                          # 1. data services (Qdrant, Postgres, Redis, Langfuse, Grafana)
+make models                      # 2. local LLMs via Ollama (dev)
+cp config/settings.example.yaml config/settings.yaml   # 3. configure (see docs/SETUP.md)
+export RAGNAROK_VECTOR_STORE=qdrant RAGNAROK_CACHE=redis
+ragnarok doctor                  # 4. verify everything is reachable
+ragnarok ingest datasets/sample  # 5. ingest a corpus
+ragnarok ask "What is the refund window for enterprise customers?"   # 6. ask
+ragnarok serve                   # 7. run the FastAPI + Slack service
+```
+
+See **[docs/SETUP.md](docs/SETUP.md)** for prerequisites, configuration, strategy selection, and
+troubleshooting, and [docs/01](docs/01-environment-and-infrastructure.md) for infrastructure details.
 
 ---
 
-_This repository is documentation‑first: the `docs/` set specifies the complete, buildable system.
-Code modules are described with runnable reference snippets in each document so the implementation
-can be assembled step by step._
+_The `docs/` set specifies the complete system; `src/ragnarok/` implements it (39 steps, mapped 1:1
+to [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)). Everything runs fully offline for dev/CI and
+scales to real models/stores by configuration._
