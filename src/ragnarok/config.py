@@ -151,9 +151,26 @@ class OptimizationCfg(BaseModel):
     max_cost_per_query_usd: float = 0.0  # 0 = disabled; > 0 forces the cheap path when exceeded
 
 
+class RagCfg(BaseModel):
+    """Selectable RAG architecture / strategy (Steps 29-39; catalog in docs/15)."""
+
+    strategy: str = "hybrid"  # naive|hybrid|hyde|fusion|corrective|self_rag|graph|
+    #                           hybrid_graph|multimodal|raptor|adaptive|agentic
+    fusion_num_queries: int = 4
+    corrective_grade_min: float = 0.30
+    self_rag_relevance_min: float = 0.30
+    graph_expand_hops: int = 1
+    raptor_levels: int = 2
+    adaptive_multistep_intents: list[str] = Field(
+        default_factory=lambda: ["comparison", "multi_hop", "howto"]
+    )
+    agentic_max_steps: int = 4
+
+
 class Settings(BaseModel):
     env: str = "local"
     models: Models
+    rag: RagCfg = Field(default_factory=RagCfg)
     retrieval: RetrievalCfg = Field(default_factory=RetrievalCfg)
     generation: GenerationCfg = Field(default_factory=GenerationCfg)
     chunking: ChunkingCfg = Field(default_factory=ChunkingCfg)

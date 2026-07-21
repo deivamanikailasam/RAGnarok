@@ -25,11 +25,12 @@ from ragnarok.observability.trace import span, trace
 from ragnarok.optimization.budget import budget_for
 from ragnarok.optimization.semantic_cache import get_semantic_cache
 from ragnarok.providers import role
-from ragnarok.retrieval.orchestrator import retrieve
 from ragnarok.retrieval.preprocess import QueryPlan, preprocess
 from ragnarok.stores.factory import get_feature_store, get_vector_store
 from ragnarok.stores.features import FeatureStore
 from ragnarok.stores.vector import VectorStore
+from ragnarok.strategies import get_strategy
+from ragnarok.strategies.base import StrategyContext
 from ragnarok.user import User
 
 _REFUSALS = {
@@ -93,6 +94,8 @@ async def answer(
     history: list[str] | None = None,
     facets: dict[str, list[str]] | None = None,
     collection: str = "chunks",
+    strategy: str | None = None,
+    graph: object | None = None,
 ) -> AnswerResult:
     user = user or User()
     store = store or get_vector_store()
@@ -152,10 +155,27 @@ async def answer(
                 text=ov.answer if ov.allowed else "I can't answer that.", trace_id=trace_id
             )
 
-        # 3. retrieval (filter -> hybrid -> rerank -> signals)
+        # 3. retrieval via the selected RAG strategy (Step 29; catalog in docs/15).
+        # Config default or an explicit override; the Adaptive strategy picks per query.
+        strategy_name = strategy or get_settings().rag.strategy
+        strat = get_strategy(strategy_name)
+        sctx = StrategyContext(
+            query=iv.sanitized, pre=pre, user=user, store=store, features=features,
+            collection=collection, graph=graph,
+        )
         with span("retrieve") as s:
-            results = retrieve(pre, user, store, features, collection=collection)
-            s.set(returned=len(results))
+            sres = await strat.run(sctx)
+            s.set(strategy=sres.strategy, returned=len(sres.results), notes=sres.notes)
+        metrics.collector().inc("strategy_used", strategy=sres.strategy)
+
+        # A strategy may answer directly (no-retrieval path: Adaptive/Self-RAG/chitchat-like).
+        if sres.direct_answer is not None:
+            ov = check_output(sres.direct_answer)
+            metrics.record_answer(abstained=False, blocked=not ov.allowed)
+            return AnswerResult(
+                text=ov.answer if ov.allowed else "I can't answer that.", trace_id=trace_id
+            )
+        results = sres.results
 
         # Adaptive budget (Step 28): route simple, confident queries to the small model with a
         # tighter context/token budget; complex/uncertain ones to the large model.
