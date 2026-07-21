@@ -21,3 +21,4 @@ redis_data/
 grafana_data/
 datasets/raw/
 *.log
+.ragnarok/
