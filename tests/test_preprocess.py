@@ -30,6 +30,7 @@ async def test_optimizer_rewrites_and_caches():
     p1 = await optimize_query("and for enterprise?", ["What's the refund window?"])
     p2 = await optimize_query("and for enterprise?", ["What's the refund window?"])
     assert "enterprise" in p1.rewritten_query.lower()
+    assert p2.rewritten_query == p1.rewritten_query  # cache returns the same plan
     assert calls["n"] == 1  # second call served from cache
     reset_clients()
     cache_mod.get_cache.cache_clear()

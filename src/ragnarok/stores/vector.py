@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -26,7 +26,7 @@ class MetadataFilter(BaseModel):
 
     equals: dict[str, list[str]] = Field(default_factory=dict)  # field -> allowed values
     access_tags: list[str] = Field(default_factory=list)  # payload must overlap these
-    freshness_after: Optional[str] = None  # ISO date lower bound
+    freshness_after: str | None = None  # ISO date lower bound
 
     def matches(self, payload: dict[str, Any]) -> bool:
         for field_name, allowed in self.equals.items():

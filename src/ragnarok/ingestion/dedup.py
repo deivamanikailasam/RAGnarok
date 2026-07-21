@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Optional
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -50,7 +49,7 @@ class NearDupIndex:
         self.max_distance = max_distance
         self._seen: list[tuple[str, int]] = []
 
-    def find_duplicate(self, text: str) -> Optional[str]:
+    def find_duplicate(self, text: str) -> str | None:
         fp = simhash(text)
         for doc_id, seen_fp in self._seen:
             if hamming(fp, seen_fp) <= self.max_distance:

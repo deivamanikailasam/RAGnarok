@@ -8,7 +8,7 @@ perceived latency (first token < 1s). A fallback to llm_small keeps answers flow
 
 from __future__ import annotations
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from ragnarok import resilience
 from ragnarok.generation.context import AssembledContext

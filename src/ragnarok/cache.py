@@ -11,7 +11,7 @@ import json
 import os
 import time
 from functools import lru_cache
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 
 def make_key(namespace: str, version: str, *parts: Any) -> str:
@@ -20,18 +20,18 @@ def make_key(namespace: str, version: str, *parts: Any) -> str:
 
 
 class Cache(Protocol):
-    def get(self, key: str) -> Optional[str]: ...
-    def set(self, key: str, value: str, ttl_s: Optional[int] = None) -> None: ...
+    def get(self, key: str) -> str | None: ...
+    def set(self, key: str, value: str, ttl_s: int | None = None) -> None: ...
     def delete_namespace(self, prefix: str) -> int: ...
 
 
 class InMemoryCache:
     def __init__(self) -> None:
-        self._db: dict[str, tuple[str, Optional[float]]] = {}
+        self._db: dict[str, tuple[str, float | None]] = {}
         self.hits = 0
         self.misses = 0
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         item = self._db.get(key)
         if item is None:
             self.misses += 1
@@ -44,7 +44,7 @@ class InMemoryCache:
         self.hits += 1
         return value
 
-    def set(self, key: str, value: str, ttl_s: Optional[int] = None) -> None:
+    def set(self, key: str, value: str, ttl_s: int | None = None) -> None:
         expiry = time.monotonic() + ttl_s if ttl_s else None
         self._db[key] = (value, expiry)
 
@@ -61,10 +61,10 @@ class RedisCache:  # pragma: no cover - requires a running Redis
 
         self._r = redis.from_url(url, decode_responses=True)
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         return self._r.get(key)
 
-    def set(self, key: str, value: str, ttl_s: Optional[int] = None) -> None:
+    def set(self, key: str, value: str, ttl_s: int | None = None) -> None:
         self._r.set(key, value, ex=ttl_s)
 
     def delete_namespace(self, prefix: str) -> int:
@@ -78,12 +78,12 @@ class RedisCache:  # pragma: no cover - requires a running Redis
 # JSON convenience -----------------------------------------------------------
 
 
-def get_json(cache: Cache, key: str) -> Optional[Any]:
+def get_json(cache: Cache, key: str) -> Any | None:
     raw = cache.get(key)
     return json.loads(raw) if raw is not None else None
 
 
-def set_json(cache: Cache, key: str, value: Any, ttl_s: Optional[int] = None) -> None:
+def set_json(cache: Cache, key: str, value: Any, ttl_s: int | None = None) -> None:
     cache.set(key, json.dumps(value, default=str), ttl_s)
 
 

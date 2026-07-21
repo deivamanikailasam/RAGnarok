@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import contextvars
 import time
-from dataclasses import dataclass, field
-from typing import Any, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import Any
 
 from ragnarok.observability import metrics
 from ragnarok.observability.cost import cost_of
@@ -25,7 +26,7 @@ class Span:
     tokens: int = 0
     cost: float = 0.0
     duration_s: float = 0.0
-    children: list["Span"] = field(default_factory=list)
+    children: list[Span] = field(default_factory=list)
 
     def set(self, **kw: Any) -> None:
         self.meta.update(kw)

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -49,14 +49,14 @@ class SourceDocument(BaseModel):
     title: str = ""
     blocks: list[Block] = Field(default_factory=list)
     acl_tags: list[str] = Field(default_factory=list)
-    fetched_at: Optional[str] = None
+    fetched_at: str | None = None
     content_hash: str = ""
 
     def compute_hash(self) -> str:
         # timestamp deliberately excluded so identical content re-fetches to the same hash (Step 5)
         return sha256_of(self.uri, self.title, [b.model_dump() for b in self.blocks])
 
-    def with_hash(self) -> "SourceDocument":
+    def with_hash(self) -> SourceDocument:
         self.content_hash = self.compute_hash()
         return self
 

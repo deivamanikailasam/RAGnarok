@@ -43,8 +43,9 @@ def build_app() -> Any:  # pragma: no cover - exercised via integration
 
     @app.get("/readyz")
     def readyz() -> dict[str, Any]:
-        from ragnarok.cli import DEFAULT_ENDPOINTS, check_endpoint
         import os
+
+        from ragnarok.cli import DEFAULT_ENDPOINTS, check_endpoint
 
         checks = {n: check_endpoint(n, os.environ.get(e, d)).ok for n, (e, d) in DEFAULT_ENDPOINTS.items()}
         return {"ready": all(checks.values()), "checks": checks}

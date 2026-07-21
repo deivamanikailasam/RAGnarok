@@ -8,8 +8,8 @@ sampled live traffic.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Optional
 
 from ragnarok.config import get_settings
 from ragnarok.eval.golden import GoldenCase, load_golden
@@ -69,13 +69,13 @@ def _aggregate(cases: list[CaseResult]) -> dict[str, float]:
 
 
 async def run_suite(
-    suite: Optional[str] = None,
+    suite: str | None = None,
     *,
-    answer_fn: Optional[AnswerFn] = None,
-    store: Optional[VectorStore] = None,
-    features: Optional[FeatureStore] = None,
-    facets: Optional[dict[str, list[str]]] = None,
-    thresholds: Optional[dict[str, float]] = None,
+    answer_fn: AnswerFn | None = None,
+    store: VectorStore | None = None,
+    features: FeatureStore | None = None,
+    facets: dict[str, list[str]] | None = None,
+    thresholds: dict[str, float] | None = None,
 ) -> EvalReport:
     settings = get_settings()
     cases = load_golden(suite or settings.eval.golden_suite)

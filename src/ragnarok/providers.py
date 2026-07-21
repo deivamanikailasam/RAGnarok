@@ -15,8 +15,9 @@ live model server.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Any, Protocol
 
 from ragnarok.config import LLMRole, get_settings
 

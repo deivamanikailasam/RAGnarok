@@ -8,9 +8,7 @@ guided-JSON, temperature 0, and cached; they run concurrently.
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -27,7 +25,7 @@ class QueryPlan(BaseModel):
     sub_queries: list[str] = Field(default_factory=list)
     expansions: list[str] = Field(default_factory=list)
     needs_retrieval: bool = True
-    hyde_hint: Optional[str] = None
+    hyde_hint: str | None = None
 
     def retrieval_queries(self) -> list[str]:
         return self.sub_queries or [self.rewritten_query]
@@ -43,7 +41,7 @@ class SourcePlan(BaseModel):
 @dataclass
 class PreprocessResult:
     plan: QueryPlan
-    source: Optional[SourcePlan] = None
+    source: SourcePlan | None = None
     skip_retrieval: bool = False
 
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Protocol
 
 
 @dataclass
@@ -24,7 +24,7 @@ class DocRecord:
 
 
 class Registry(Protocol):
-    def get(self, doc_id: str) -> Optional[DocRecord]: ...
+    def get(self, doc_id: str) -> DocRecord | None: ...
     def upsert(self, record: DocRecord) -> None: ...
     def delete(self, doc_id: str) -> None: ...
     def all_ids(self) -> list[str]: ...
@@ -38,7 +38,7 @@ class InMemoryRegistry:
     def __init__(self) -> None:
         self._db: dict[str, DocRecord] = {}
 
-    def get(self, doc_id: str) -> Optional[DocRecord]:
+    def get(self, doc_id: str) -> DocRecord | None:
         return self._db.get(doc_id)
 
     def upsert(self, record: DocRecord) -> None:
@@ -69,7 +69,7 @@ class SqliteRegistry:
         )
         self._conn.commit()
 
-    def get(self, doc_id: str) -> Optional[DocRecord]:
+    def get(self, doc_id: str) -> DocRecord | None:
         row = self._conn.execute(
             "SELECT doc_id, content_hash, status, enrichment_version, embedding_version "
             "FROM documents WHERE doc_id = ?",

@@ -9,8 +9,9 @@ retrieval, fall back to an access-scoped unfiltered search (never relaxing secur
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
 
 from ragnarok.config import RetrievalCfg, get_settings
 from ragnarok.ingestion.embedding import get_embedding_client
@@ -72,7 +73,7 @@ def hybrid_search(
     *,
     cfg: RetrievalCfg | None = None,
     collection: str = "chunks",
-    relax_fn: Optional[Callable[[], MetadataFilter]] = None,
+    relax_fn: Callable[[], MetadataFilter] | None = None,
 ) -> list[RetrievalResult]:
     cfg = cfg or get_settings().retrieval
     hit_lists, by_id, dense_best, sparse_best = _search_once(store, plan, flt, cfg, collection)

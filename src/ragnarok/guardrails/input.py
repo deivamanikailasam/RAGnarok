@@ -10,8 +10,8 @@ from __future__ import annotations
 import re
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from ragnarok.config import InputGuardCfg, get_settings
 from ragnarok.guardrails import pii as pii_mod

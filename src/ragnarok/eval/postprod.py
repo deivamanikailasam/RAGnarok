@@ -10,7 +10,6 @@ Sampling is deterministic (hash of trace_id) so it is reproducible and needs no 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from ragnarok.eval.golden import GoldenCase
 
@@ -24,7 +23,7 @@ class ServedAnswer:
     grounding_score: float = 1.0
     abstained: bool = False
     doc_ids: list[str] = field(default_factory=list)
-    feedback: Optional[int] = None  # +1 / -1 from the user (Slack buttons / API)
+    feedback: int | None = None  # +1 / -1 from the user (Slack buttons / API)
 
 
 class TrafficLog:

@@ -13,9 +13,9 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Iterable
 
 from ragnarok.cache import get_cache, get_json, make_key, set_json
 from ragnarok.config import get_settings

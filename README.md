@@ -87,7 +87,26 @@ tokenization, latency, cost, and quality.
 | Metrics/dashboards | Prometheus + Grafana | managed Prometheus |
 | Chat surface | Slack Bolt (Socket Mode) | Slack + public gateway |
 
-## Repository layout (target)
+## Implementation status
+
+The system is implemented as a runnable Python package (`src/ragnarok/`) built in 27 steps that map
+1:1 to [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md). Every step is committed individually with
+tests. The whole pipeline runs **fully offline** using deterministic local backends (no GPU/LLM
+required) for development and CI, and switches to real models/stores by environment variables.
+
+```bash
+pip install -e ".[dev]"
+pytest -q                        # ~100 tests, all green, no external services
+python -m ragnarok.eval.ci_gate  # deterministic retrieval + guardrail gate
+ragnarok doctor                  # health-check dependencies
+```
+
+Backends are selected by env (local defaults; prod values in `docker/app.Dockerfile`):
+`RAGNAROK_VECTOR_STORE` (memory|qdrant), `RAGNAROK_FEATURE_STORE` (memory|feast),
+`RAGNAROK_EMBED_BACKEND`/`RAGNAROK_RERANK_BACKEND` (local|http), `RAGNAROK_CACHE` (memory|redis),
+and each model role's `base_url` (Ollama/vLLM/OpenAI/…).
+
+## Repository layout
 
 ```
 RAGnarok/

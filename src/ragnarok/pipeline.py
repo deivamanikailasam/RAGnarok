@@ -9,10 +9,12 @@ and deterministic (no open-ended agent loop).
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import asdict, dataclass, field
 
+from ragnarok.cache import get_cache, get_json, make_key, set_json
+from ragnarok.config import get_settings
 from ragnarok.generation.context import Citation, build_context
+from ragnarok.generation.context import Citation as _Citation
 from ragnarok.generation.generate import generate_answer
 from ragnarok.generation.grounding import check_grounding
 from ragnarok.generation.postprocess import postprocess
@@ -49,6 +51,24 @@ class AnswerResult:
     degraded: bool = False
     retrieved: int = 0
     trace_id: str = ""
+    cache_hit: bool = False
+
+
+def _cache_key(query: str, user: User, collection: str) -> str:
+    norm = " ".join(query.lower().split())  # normalization widens hit rate
+    ents = ",".join(sorted(user.entitlements))
+    return make_key("ans", collection, hash((norm, ents)))
+
+
+def _serialize(r: AnswerResult) -> dict:
+    d = asdict(r)
+    return d
+
+
+def _deserialize(d: dict) -> AnswerResult:
+    d = dict(d)
+    d["citations"] = [_Citation(**c) for c in d.get("citations", [])]
+    return AnswerResult(**d)
 
 
 async def _direct_answer(plan: QueryPlan) -> str:
@@ -64,12 +84,12 @@ async def _direct_answer(plan: QueryPlan) -> str:
 
 async def answer(
     query: str,
-    user: Optional[User] = None,
+    user: User | None = None,
     *,
-    store: Optional[VectorStore] = None,
-    features: Optional[FeatureStore] = None,
-    history: Optional[list[str]] = None,
-    facets: Optional[dict[str, list[str]]] = None,
+    store: VectorStore | None = None,
+    features: FeatureStore | None = None,
+    history: list[str] | None = None,
+    facets: dict[str, list[str]] | None = None,
     collection: str = "chunks",
 ) -> AnswerResult:
     user = user or User()
@@ -89,6 +109,17 @@ async def answer(
                 text=_REFUSALS.get(iv.reason, "I can't process that request."),
                 blocked=True, trace_id=trace_id,
             )
+
+        # Response cache (Step 27): identical question + entitlements served instantly.
+        # Only consulted when there's no chat history (follow-ups depend on context).
+        cache = get_cache()
+        ckey = _cache_key(iv.sanitized, user, collection)
+        if not history and (cached := get_json(cache, ckey)) is not None:
+            metrics.collector().inc("response_cache_hit")
+            result = _deserialize(cached)
+            result.cache_hit = True
+            result.trace_id = trace_id
+            return result
 
         # 2. pre-process (query optimizer + source identifier)
         with span("preprocess"):
@@ -131,7 +162,7 @@ async def answer(
 
         metrics.record_answer(abstained=not gv.grounded, blocked=False)
         tr.root.set(tokens=tr.total_tokens, cost=tr.total_cost)
-        return AnswerResult(
+        result = AnswerResult(
             text=ov.answer,
             citations=pp.resolved_citations,
             followups=pp.followups,
@@ -141,6 +172,10 @@ async def answer(
             retrieved=len(results),
             trace_id=trace_id,
         )
+        # cache only confident, grounded answers (never abstentions/blocks)
+        if gv.grounded and not history:
+            set_json(cache, ckey, _serialize(result), ttl_s=get_settings().caching.response_ttl_s)
+        return result
 
 
 async def answer_once(query: str) -> AnswerResult:

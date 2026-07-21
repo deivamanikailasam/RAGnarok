@@ -8,13 +8,13 @@ re-ingest never affects live query latency.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
 from ragnarok.ingestion.connectors import load_any
 from ragnarok.ingestion.dedup import NearDupIndex
-from ragnarok.ingestion.models import NormalizedDoc, SourceDocument
+from ragnarok.ingestion.models import NormalizedDoc
 from ragnarok.ingestion.normalize import normalize
 from ragnarok.ingestion.registry import DocRecord, Registry, SqliteRegistry
 
@@ -37,7 +37,7 @@ class IngestSummary:
 class IngestionPipeline:
     def __init__(
         self,
-        registry: Optional[Registry] = None,
+        registry: Registry | None = None,
         *,
         # later steps inject these; None keeps the stage a no-op so the pipeline stays runnable
         enrich_fn: Callable[[NormalizedDoc], object] | None = None,

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from ragnarok import resilience
 from ragnarok.config import get_settings, load_settings
 from ragnarok.prompts import prompts
-from ragnarok.providers import FakeLLM, reset_clients, role, set_role_client
+from ragnarok.providers import FakeLLM, reset_clients, set_role_client
 from ragnarok.structured import generate_structured
 
 

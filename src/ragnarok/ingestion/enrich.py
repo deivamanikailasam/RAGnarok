@@ -14,7 +14,7 @@ keeps enrichment resilient (labelled degraded upstream).
 from __future__ import annotations
 
 import asyncio
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -39,7 +39,7 @@ class CustomMetadata(BaseModel):
     entities: list[str] = Field(default_factory=list)
     doc_type: Literal["policy", "runbook", "spec", "faq", "contract", "report", "other"] = "other"
     audience: list[str] = Field(default_factory=list)  # e.g. ["enterprise","consumer"]
-    freshness_date: Optional[str] = None  # ISO date if the doc states an effective/updated date
+    freshness_date: str | None = None  # ISO date if the doc states an effective/updated date
     authority: Literal["official", "draft", "deprecated"] = "draft"
     access_tags: list[str] = Field(default_factory=list)
 
@@ -79,7 +79,7 @@ class EnrichedDocument(BaseModel):
     @classmethod
     def from_norm(
         cls, norm: NormalizedDoc, enr: Enrichment, *, model: str, version: str
-    ) -> "EnrichedDocument":
+    ) -> EnrichedDocument:
         # ACLs from the source become access_tags if the LLM didn't infer them (security default).
         if not enr.custom_metadata.access_tags:
             enr.custom_metadata.access_tags = list(norm.acl_tags)

@@ -8,7 +8,7 @@ the ``chunks`` alias. Rollback is repointing the alias — the old version is re
 from __future__ import annotations
 
 import re
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from ragnarok.stores.vector import VectorStore
 
@@ -32,7 +32,7 @@ class BlueGreenReindexer:
         self,
         build_into: Callable[[str], None],
         *,
-        validate: Optional[Callable[[str], bool]] = None,
+        validate: Callable[[str], bool] | None = None,
     ) -> str:
         """Build a fresh collection, validate it, then swap the alias. Returns the new collection.
 
